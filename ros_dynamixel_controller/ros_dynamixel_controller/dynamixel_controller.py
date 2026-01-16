@@ -326,3 +326,15 @@ class Dynamixel:
         selected_IDs = self.fetch_and_check_ID(ID)
         self.write_to_2bytes_group_sync(currents, selected_IDs, self.groupSyncWriteCurrent)
         self.send_group_sync(self.groupSyncWriteCurrent)
+
+    def set_profile_velocity(self, profile_velocity, ID=None):
+        selected_IDs = self.fetch_and_check_ID(ID)
+        for selected_ID in selected_IDs:
+            profile_velocity_int = int(profile_velocity)
+            self.packet_handler.write4ByteTxRx(self.port_handler, selected_ID, ADDR_PROFILE_VELOCITY, profile_velocity_int)
+
+    def set_profile_acceleration(self, profile_acceleration, ID=None):
+        selected_IDs = self.fetch_and_check_ID(ID)
+        for selected_ID in selected_IDs: 
+            profile_acceleration_int = int(profile_acceleration)
+            self.packet_handler.write4ByteTxRx(self.port_handler, selected_ID, ADDR_PROFILE_ACCELERATION, profile_acceleration_int)

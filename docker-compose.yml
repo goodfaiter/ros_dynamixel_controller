@@ -1,5 +1,5 @@
 services:
-  ros-dynamixel-controller:
+  ros_dynamixel_controller:
     build:
       context: .
       dockerfile: Dockerfile

@@ -44,6 +44,7 @@ LEN_CURRENT = 2  # uint16_t (1 mA/unit)
 
 # Conversions
 DYNA_TO_AMP = 2.69e-3  # Converts Dynamixel units [int] to [A]
+DYNA_TO_DEGREE = 0.088  # Converts Dynamixel units [int] to [degree]
 DYNA_TO_REV_PER_MIN = 0.229  # Converts Dynamixel units [int] to [rev/min]
 
 

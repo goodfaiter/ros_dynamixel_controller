@@ -1,6 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
+from sensor_msgs.msg import Joy
 import numpy as np
 
 from .dynamixel_controller import Dynamixel
@@ -14,6 +15,7 @@ class RosDynamixelController(Node):
         self.motors_id = [11]
         self.motor_series = ["xm"]
         self.num_motors = len(self.motors_id)
+        self._desired_position = [0.0 for _ in range(self.num_motors)]
 
         # Parameters
         self._declare_parameters()
@@ -27,13 +29,25 @@ class RosDynamixelController(Node):
 
     def _declare_parameters(self):
         """Declare and get all ROS parameters"""
-
-        self.desired_position_topic = self.declare_parameter("desired_position_topic", "/desired_position_rad").get_parameter_value().string_value
-        self.measured_position_topic = self.declare_parameter("measured_position_topic", "/measured_position_rad").get_parameter_value().string_value
-        self.measured_velocity_topic = self.declare_parameter("measured_velocity_topic", "/measured_velocity_rad_per_sec").get_parameter_value().string_value
-        self.measured_current_topic = self.declare_parameter("measured_current_topic", "/measured_current_amp").get_parameter_value().string_value
-        self.measured_voltage_topic = self.declare_parameter("measured_voltage_topic", "/measured_voltage_volt").get_parameter_value().string_value
-        self.measured_temperature_topic = self.declare_parameter("measured_temperature_topic", "/measured_temperature_celsius").get_parameter_value().string_value
+        self.joystick_topic = self.declare_parameter("joystick_topic", "/joy").get_parameter_value().string_value
+        self.desired_position_topic = (
+            self.declare_parameter("desired_position_topic", "/desired_position_rad").get_parameter_value().string_value
+        )
+        self.measured_position_topic = (
+            self.declare_parameter("measured_position_topic", "/measured_position_rad").get_parameter_value().string_value
+        )
+        self.measured_velocity_topic = (
+            self.declare_parameter("measured_velocity_topic", "/measured_velocity_rad_per_sec").get_parameter_value().string_value
+        )
+        self.measured_current_topic = (
+            self.declare_parameter("measured_current_topic", "/measured_current_amp").get_parameter_value().string_value
+        )
+        self.measured_voltage_topic = (
+            self.declare_parameter("measured_voltage_topic", "/measured_voltage_volt").get_parameter_value().string_value
+        )
+        self.measured_temperature_topic = (
+            self.declare_parameter("measured_temperature_topic", "/measured_temperature_celsius").get_parameter_value().string_value
+        )
 
     def _setup_communication(self):
         """Initialize communication with Dynamixel servos"""
@@ -47,16 +61,17 @@ class RosDynamixelController(Node):
         )
         self.servo.begin_communication()
         self.servo.disable_torque(False, ID="all")
-        self.servo.set_current_limit(100, ID="all") # Set current limit to 100mA, change for real tests
-        self.servo.set_position_pid(800, 0, 200, ID="all") # Set position PID gains
-        self.servo.set_profile_velocity(0, ID="all") # 0 implifes infinite velocity
-        self.servo.set_profile_acceleration(0, ID="all") # 0 implies infinite acceleration
+        self.servo.set_current_limit(100, ID="all")  # Set current limit to 100mA, change for real tests
+        self.servo.set_position_pid(800, 0, 200, ID="all")  # Set position PID gains
+        self.servo.set_profile_velocity(0, ID="all")  # 0 implies infinite velocity
+        self.servo.set_profile_acceleration(0, ID="all")  # 0 implies infinite acceleration
         self.servo.set_operating_mode("position", ID="all")
         self.servo.enable_torque(False, ID="all")
         self.get_logger().info("Communication with Dynamixel servos established.")
 
     def _setup_publishers_subscribers(self):
         """Create all publishers and subscribers"""
+        self.joystick_subscription = self.create_subscription(Joy, self.joystick_topic, self._joystick_callback, 10)
         self.desired_position_publisher = self.create_publisher(Float32MultiArray, self.desired_position_topic, 10)
         self.measured_position_publisher = self.create_publisher(Float32MultiArray, self.measured_position_topic, 10)
         self.measured_velocity_publisher = self.create_publisher(Float32MultiArray, self.measured_velocity_topic, 10)
@@ -64,9 +79,14 @@ class RosDynamixelController(Node):
         self.measured_voltage_publisher = self.create_publisher(Float32MultiArray, self.measured_voltage_topic, 10)
         self.measured_temperature_publisher = self.create_publisher(Float32MultiArray, self.measured_temperature_topic, 10)
 
+    def _joystick_callback(self, msg: Joy):
+        """Translate joystick input to desired position commands"""
+        self._desired_position = [msg.axes[0] * 360 for _ in range(self.num_motors)]
+        self._publish_desired_position([pos / 180.0 * np.pi for pos in self._desired_position])
+
     def _send_position(self, positions: list[float]):
         """Send position commands to Dynamixel motors"""
-        desired_position = [positions[i] / DYNA_TO_AMP for i in range(self.num_motors)]
+        desired_position = [positions[i] / DYNA_TO_DEGREE for i in range(self.num_motors)]
         self.servo.write_position(desired_position, "all")
 
     def _publish_desired_position(self, positions: list[float]):
@@ -77,9 +97,7 @@ class RosDynamixelController(Node):
 
     def _motor_callback(self):
         """Motor commands"""
-        desired_position = [0.0 for _ in range(self.num_motors)]
-        self._send_position(desired_position)
-        self._publish_desired_position(desired_position)
+        self._send_position(self._desired_position)
 
     def _state_callback(self):
         """Timer callback for reading and publishing motor states"""

@@ -60,6 +60,8 @@ class Dynamixel:
         self.groupSyncReadPosition = GroupSyncRead(self.port_handler, self.packet_handler, ADDR_PRESENT_POSITION, LEN_POSITION)
         self.groupSyncReadVelocity = GroupSyncRead(self.port_handler, self.packet_handler, ADDR_PRESENT_VELOCITY, LEN_VELOCITY)
         self.groupSyncReadCurrent = GroupSyncRead(self.port_handler, self.packet_handler, ADDR_PRESENT_CURRENT, LEN_CURRENT)
+        self.groupSyncReadVoltage = GroupSyncRead(self.port_handler, self.packet_handler, ADDR_PRESENT_INPUT_VOLTAGE, LEN_VOLTAGE)
+        self.groupSyncReadTemperature = GroupSyncRead(self.port_handler, self.packet_handler, ADDR_PRESENT_TEMPERATURE, LEN_TEMPERATURE)
 
     def fetch_and_check_ID(self, ID):
         if self.multiple_motors:
@@ -287,6 +289,24 @@ class Dynamixel:
         cur = self.read_from_group_sync(selected_IDs, self.groupSyncReadCurrent, ADDR_PRESENT_CURRENT, LEN_CURRENT)
         self.groupSyncReadCurrent.clearParam()
         return cur
+    
+    def read_voltage(self, ID=None):
+        selected_IDs = self.fetch_and_check_ID(ID)
+        for id in selected_IDs:
+            self.groupSyncReadVoltage.addParam(id)
+        self.receive_group_sync(self.groupSyncReadVoltage)
+        readings = self.read_from_group_sync(selected_IDs, self.groupSyncReadVoltage, ADDR_PRESENT_INPUT_VOLTAGE, LEN_VOLTAGE)
+        self.groupSyncReadVoltage.clearParam()
+        return readings
+    
+    def read_temperature(self, ID=None):
+        selected_IDs = self.fetch_and_check_ID(ID)
+        for id in selected_IDs:
+            self.groupSyncReadTemperature.addParam(id)
+        self.receive_group_sync(self.groupSyncReadTemperature)
+        readings = self.read_from_group_sync(selected_IDs, self.groupSyncReadTemperature, ADDR_PRESENT_TEMPERATURE, LEN_TEMPERATURE)
+        self.groupSyncReadTemperature.clearParam()
+        return readings
 
     def get_errors(self, ID=None):
         selected_IDs = self.fetch_and_check_ID(ID)

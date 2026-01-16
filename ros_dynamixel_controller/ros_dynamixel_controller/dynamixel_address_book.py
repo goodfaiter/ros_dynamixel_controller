@@ -28,6 +28,8 @@ ADDR_PRESENT_POSITION = 132
 ADDR_PRESENT_VELOCITY = 128
 ADDR_PRESENT_CURRENT = 126
 ADDR_PRESENT_PWM = 124
+ADDR_PRESENT_INPUT_VOLTAGE = 144
+ADDR_PRESENT_TEMPERATURE = 146
 
 # Writing
 ADDR_GOAL_POSITION = 116
@@ -45,11 +47,16 @@ ADDR_MOVING_STATUS = 123
 LEN_VELOCITY = 4  # uint32_t (0.229 rpm/unit)
 LEN_POSITION = 4  # uint32_t (0-4095 for 0-360°)
 LEN_CURRENT = 2  # uint16_t (1 mA/unit)
+LEN_PWM = 2  # int16_t (0.1%/unit)
+LEN_TEMPERATURE = 1  # uint8_t (1 °C/unit)
+LEN_VOLTAGE = 2  # uint16_t (0.1 V/unit)
 
 # Conversions
 DYNA_TO_AMP = 2.69e-3  # Converts Dynamixel units [int] to [A]
 DYNA_TO_DEGREE = 0.088  # Converts Dynamixel units [int] to [degree]
 DYNA_TO_REV_PER_MIN = 0.229  # Converts Dynamixel units [int] to [rev/min]
+DYNA_TO_TEMPERATURE = 1.0  # Converts Dynamixel units [int] to [°C]
+DYNA_TO_VOLTAGE = 0.1  # Converts Dynamixel units [int] to [V]
 
 
 operating_modes_xm = {"current": 0, "velocity": 1, "position": 3, "extended position": 4, "current-based position": 5, "pwm": 16}

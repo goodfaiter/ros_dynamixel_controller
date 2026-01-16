@@ -177,6 +177,23 @@ class Dynamixel:
             int_max_current_ma = min(1193, int(max_current_ma / 2.69))  # one increment being 2.69 mA. 1193 is max range
             self.packet_handler.write2ByteTxRx(self.port_handler, selected_ID, ADDR_CURRENT_LIMIT, int_max_current_ma)
 
+    def set_position_pid(self, p: int, i: int, d: int, ID=None):
+        selected_IDs = self.fetch_and_check_ID(ID)
+        for selected_ID in selected_IDs:
+
+            was_torque_on = False
+            if self.is_torque_on(print_only_if_error=True, ID=selected_ID):
+                was_torque_on = True
+                self.disable_torque(print_only_if_error=True, ID=selected_ID)
+
+            # Write gains (2-byte writes)
+            self.packet_handler.write2ByteTxRx(self.port_handler, selected_ID, ADDR_POSITION_P_GAIN, p)
+            self.packet_handler.write2ByteTxRx(self.port_handler, selected_ID, ADDR_POSITION_I_GAIN, i)
+            self.packet_handler.write2ByteTxRx(self.port_handler, selected_ID, ADDR_POSITION_D_GAIN, d)
+
+            if was_torque_on:
+                self.enable_torque(print_only_if_error=True, ID=selected_ID)
+
     def set_velocity_pid(self, p: int, i: int, d: int, ID=None):
         selected_IDs = self.fetch_and_check_ID(ID)
         for selected_ID in selected_IDs:
@@ -189,7 +206,6 @@ class Dynamixel:
             # Write gains (2-byte writes)
             self.packet_handler.write2ByteTxRx(self.port_handler, selected_ID, ADDR_VELOCITY_P_GAIN, p)
             self.packet_handler.write2ByteTxRx(self.port_handler, selected_ID, ADDR_VELOCITY_I_GAIN, i)
-            self.packet_handler.write2ByteTxRx(self.port_handler, selected_ID, ADDR_VELOCITY_D_GAIN, d)
 
             if was_torque_on:
                 self.enable_torque(print_only_if_error=True, ID=selected_ID)

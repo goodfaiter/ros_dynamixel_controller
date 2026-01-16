@@ -46,6 +46,7 @@ class RosDynamixelController(Node):
         self.servo.begin_communication()
         self.servo.disable_torque(False, ID="all")
         self.servo.set_current_limit(100, ID="all") # Set current limit to 100mA, change for real tests
+        self.servo.set_position_pid(800, 0, 200, ID="all") # Set position PID gains
         self.servo.set_profile_velocity(0, ID="all") # 0 implifes infinite velocity
         self.servo.set_profile_acceleration(0, ID="all") # 0 implies infinite acceleration
         self.servo.set_operating_mode("position", ID="all")

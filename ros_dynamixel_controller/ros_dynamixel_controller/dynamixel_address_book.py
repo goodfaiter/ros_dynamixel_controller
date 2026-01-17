@@ -3,7 +3,9 @@ PROTOCOL_VERSION = 2.0
 
 # Control table address
 # config EEPROM
+ADDR_DRIVE_MODE = 10
 ADDR_OPERATING_MODE = 11
+ADDR_HOMING_OFFSET = 20
 ADDR_CURRENT_LIMIT = 38
 ADDR_MAX_POSITION_LIMIT = 48
 ADDR_MIN_POSITION_LIMIT = 52
@@ -57,6 +59,9 @@ DYNA_TO_DEGREE = 0.088  # Converts Dynamixel units [int] to [degree]
 DYNA_TO_REV_PER_MIN = 0.229  # Converts Dynamixel units [int] to [rev/min]
 DYNA_TO_TEMPERATURE = 1.0  # Converts Dynamixel units [int] to [°C]
 DYNA_TO_VOLTAGE = 0.1  # Converts Dynamixel units [int] to [V]
+
+# Operating modes
+DYNA_REVERSE_MODE = 1
 
 
 operating_modes_xm = {"current": 0, "velocity": 1, "position": 3, "extended position": 4, "current-based position": 5, "pwm": 16}

@@ -59,23 +59,7 @@ DYNA_TO_DEGREE = 0.088  # Converts Dynamixel units [int] to [degree]
 DYNA_TO_REV_PER_MIN = 0.229  # Converts Dynamixel units [int] to [rev/min]
 DYNA_TO_TEMPERATURE = 1.0  # Converts Dynamixel units [int] to [°C]
 DYNA_TO_VOLTAGE = 0.1  # Converts Dynamixel units [int] to [V]
+DYNA_TO_PWM = 0.113  # Converts Dynamixel units [int] to [%]
 
 # Operating modes
 DYNA_REVERSE_MODE = 1
-
-
-operating_modes_xm = {"current": 0, "velocity": 1, "position": 3, "extended position": 4, "current-based position": 5, "pwm": 16}
-
-operating_modes_xl = {"velocity": 1, "position": 3, "extended position": 4, "pwm": 16}
-
-
-# 2s complement conversion
-max_register_value = {
-    "current": 65536,
-    "pwm": 65536,
-    "position": 4294967296,
-    "velocity": 4294967296,
-    "1 byte": 256,
-    "2 bytes": 65536,
-    "4 bytes": 4294967296,
-}

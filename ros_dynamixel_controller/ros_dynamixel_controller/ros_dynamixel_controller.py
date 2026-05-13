@@ -21,7 +21,7 @@ from .dynamixel_address_book import (
 
 from dynamixel_easy_sdk import Connector, OperatingMode, Direction
 from .scanner import scan_dynamixel_motors
-from .trajectory_generator import RampGenerator, RandomGenerator, StepGenerator, SineGenerator
+from .trajectory_generator import RampGenerator, RandomGenerator, StepGenerator, SineGenerator, FixedGenerator
 from .rl_controller import RLController
 
 
@@ -34,6 +34,7 @@ class Mode(enum.Enum):
     NA = 5
     SINE = 6
     RL = 7
+    FIXED = 8
 
 
 class RosDynamixelController(Node):
@@ -44,7 +45,7 @@ class RosDynamixelController(Node):
         # return
 
         self.controller = RLController(device="cpu")
-        self.controller.load("/colcon_ws/src/ros_dynamixel_controller/models/latest_player.pt")
+        self.controller.load("/colcon_ws/src/ros_dynamixel_controller/models/latest_player_mlp_30.pt")
         self.controller.init()
         self.controller.reset()
 
@@ -57,15 +58,20 @@ class RosDynamixelController(Node):
         self._desired_position_delta_rad = 0.0
         self.radius = 0.0125  # radius of the tendon pulley
 
+        self._button_wait_time: float = 1.0
+
         # PD
         self._position_error = 0.0
 
         self._random_generator = RandomGenerator(0.0, 2.0 * np.pi)
         self._step_generator = StepGenerator(step_size=0.5)
+        self._angle_step_generator = StepGenerator(step_size=0.1 * np.pi, ceiling=0.5 * np.pi)
+        self._fixed_generator = FixedGenerator()
         # self._ramp_generator = RampGenerator(min_step_size=0.005, max_step_size=0.03)
-        self._ramp_generator = RampGenerator(min_step_size=0.01, max_step_size=0.05)
-        # self._sine_generator = SineGenerator(amplitude=np.pi, min_freq = 0.05, max_freq=0.3, phase=1.5 * np.pi)
-        self._sine_generator = SineGenerator(amplitude=np.pi, min_freq = 1.0, max_freq=2.0, phase=1.5 * np.pi)
+        # self._ramp_generator = RampGenerator(min_step_size=0.01, max_step_size=0.05)
+        self._ramp_generator = RampGenerator(min_step_size=0.02, max_step_size=0.02) # Traj for IROS 2026
+        self._sine_generator = SineGenerator(amplitude=np.pi, min_freq = 0.5, max_freq=2.0, phase=1.5 * np.pi)
+        # self._sine_generator = SineGenerator(amplitude=np.pi, min_freq = 1.0, max_freq=1.0, phase=1.5 * np.pi) # Traj for IROS 2026
 
         self._mode: Mode = Mode.MANUAL
         self._joy_ready = False
@@ -164,20 +170,16 @@ class RosDynamixelController(Node):
 
     def _joystick_callback(self, msg: Joy):
         """Store latest joystick message"""
-        # self.get_logger().info(f"Joystick axes: {msg.axes}, buttons: {msg.buttons}")
-        # if self._joy_ready:
-        #     return
-
-        # if msg.axes[0] > 0.05 or msg.axes[0] < -0.05 or msg.buttons[0] == 1 or msg.buttons[2] == 1 or msg.buttons[3] == 1:
         self._latest_joy = msg
-
-        # print(msg)
 
         # X was pressed
         if msg.buttons[0] == 1:
-            if time.time() - self._joy_call_time > 0.5:
-                self._random_generator.advance()
-                self._mode = Mode.RANDOM
+            if time.time() - self._joy_call_time > self._button_wait_time:
+                # self._random_generator.advance()
+                # self._mode = Mode.RANDOM
+                self._fixed_generator.advance()
+                self._button_wait_time = self._fixed_generator.get_wait_time()
+                self._mode = Mode.FIXED
                 self._joy_call_time = time.time()
         # Circl was pressed
         elif msg.buttons[1] == 1:
@@ -185,10 +187,13 @@ class RosDynamixelController(Node):
             self._mode = Mode.SINE
         # Square was pressed
         elif msg.buttons[3] == 1:
-            if time.time() - self._joy_call_time > 0.5:
+            if time.time() - self._joy_call_time > 2.0:
                 self._step_generator.advance()
-                self._mode = Mode.STEP
-                self._joy_call_time = time.time()
+
+                # IROS 2026 RL Traj
+                # self._angle_step_generator.advance()
+                # self._mode = Mode.STEP
+                # self._joy_call_time = time.time()
         # Triangle was pressed
         elif msg.buttons[2] == 1:
             self._ramp_generator.advance()
@@ -202,9 +207,6 @@ class RosDynamixelController(Node):
         # Joystick moved
         elif msg.axes[0] > 0.01 or msg.axes[0] < -0.01:
             self._mode = Mode.MANUAL
-        # else:
-        #     self._mode = Mode.MANUAL
-            # self._mode = Mode.ZERO
 
     def _send_position(self, position: float):
         """Send position commands to Dynamixel motors"""
@@ -254,8 +256,6 @@ class RosDynamixelController(Node):
 
     def _control_callback(self):
         """Timer callback for controlling the motor"""
-        # if not self._joy_ready:
-        #     return
         if self._latest_joy is None:
             return
 
@@ -268,8 +268,15 @@ class RosDynamixelController(Node):
             self._desired_position_degrees = self._random_generator.generate() * 180.0 / np.pi
         elif self._mode == Mode.STEP:
             self._desired_position_degrees = self._step_generator.generate() * 180.0 / np.pi
+
+            # IROS 2026 RL Traj
+            # self._desired_ee_angle_rad = self._angle_step_generator.generate()
+            # desired_position_rads = np.clip(self._measured_position_rad + self._desired_position_delta_rad, 0.0, 2 * np.pi)
+            # self._desired_position_degrees = desired_position_rads * 180.0 / np.pi
         elif self._mode == Mode.RAMP:
             self._desired_position_degrees = self._ramp_generator.generate() * 180.0 / np.pi
+        elif self._mode == Mode.FIXED:
+            self._desired_position_degrees = self._fixed_generator.generate() * 180.0 / np.pi
         elif self._mode == Mode.SINE:
             self._desired_position_degrees = self._sine_generator.generate() * 180.0 / np.pi
         elif self._mode == Mode.ZERO:
@@ -277,15 +284,6 @@ class RosDynamixelController(Node):
         elif self._mode == Mode.MANUAL:
             self._desired_position_degrees = msg.axes[0] * 360
         elif self._mode == Mode.RL:
-            # x = msg.axes[4]
-            # y = msg.axes[3]
-            # vec = np.array([x, y])
-            # unit_vec = vec / (np.linalg.norm(vec) + 1e-6)
-            # sine = msg.axes[4]
-            # cosine = msg.axes[3]
-            # self._desired_ee_angle_rad = np.arctan2(unit_vec[0], unit_vec[1])
-            # print(f"Desired EE angle (rad): {self._desired_ee_angle_rad:.2f}")
-            # self.get_logger().info(f"Joystick axes: {self.controller.action_buffer.buffer}")
             self._desired_ee_angle_rad = np.clip(msg.axes[3] * 0.5 * np.pi, 0.0, None)
             desired_position_rads = np.clip(self._measured_position_rad + self._desired_position_delta_rad, 0.0, 2 * np.pi)
             self._desired_position_degrees = desired_position_rads * 180.0 / np.pi
@@ -314,16 +312,7 @@ class RosDynamixelController(Node):
 
         self._desired_pwm_percentage = 100.0 * self._p_gain * self._position_error
         self._desired_pwm_percentage = np.clip(self._desired_pwm_percentage, -self._max_pwm, self._max_pwm)
-        # self._send_position(self._desired_position_degrees)
-        
-        # self._p_gain = 0.15
-        # self._desired_current_amps = self._p_gain * (desired_position_rads - self._measured_position_rad)
-        # self._publish_desired_current(self._desired_current_amps)
-        # self._send_current(self._desired_current_amps)
 
-        ## weak motor settings
-        # self._p_gain = 0.2
-        # self._max_pwm = 90
         self._publish_desired_pwm(self._desired_pwm_percentage)
         self._send_pwm(self._desired_pwm_percentage)
 

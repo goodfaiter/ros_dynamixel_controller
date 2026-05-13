@@ -15,6 +15,25 @@ class RandomGenerator:
         return self._value
 
 
+class FixedGenerator:
+    def __init__(self):
+        super().__init__()
+        self._values = [0.0, 0.0, 2.0, 4.0, 1.0]
+        self._wait_time = 0.0
+        self._current_index = 0
+
+    def advance(self):
+        if self._current_index == 0:
+            self._wait_time += 1.0
+        self._current_index = (self._current_index + 1) % len(self._values)
+
+    def get_wait_time(self) -> float:
+        return self._wait_time
+    
+    def generate(self) -> float:
+        return self._values[self._current_index]
+
+
 class RampGenerator:
     def __init__(self, min_step_size: float, max_step_size: float):
         super().__init__()
@@ -32,23 +51,25 @@ class RampGenerator:
         elif self._current_value <= 0.0:
             self._current_value = 0.0
             self._dir = 1.0
-            self._step_size = np.random.uniform(self._min_step_size, self._max_step_size)
+            self._step_size = 0.0
+            # self._step_size = np.random.uniform(self._min_step_size, self._max_step_size)
 
     def generate(self) -> float:
         return self._current_value
 
 
 class StepGenerator:
-    def __init__(self, step_size: float):
+    def __init__(self, step_size: float, ceiling: float = 2.0 * np.pi):
         super().__init__()
         self._step_size = step_size
         self._current_value = 0.0
         self._dir = 1.0
+        self._ceiling = ceiling
 
     def advance(self):
         self._current_value += self._dir * self._step_size
-        if self._current_value >= 2.0 * np.pi:
-            self._current_value = 2.0 * np.pi
+        if self._current_value >= self._ceiling:
+            self._current_value = self._ceiling
             self._dir = -1.0
         elif self._current_value <= 0.0:
             self._current_value = 0.0

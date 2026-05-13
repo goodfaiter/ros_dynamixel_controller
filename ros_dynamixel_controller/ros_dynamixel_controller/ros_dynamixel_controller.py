@@ -23,6 +23,7 @@ from dynamixel_easy_sdk import Connector, OperatingMode, Direction
 from .scanner import scan_dynamixel_motors
 from .trajectory_generator import RampGenerator, RandomGenerator, StepGenerator, SineGenerator, FixedGenerator
 from .rl_controller import RLController
+from .pid_controller import PIDController, LowPassFilter
 
 
 class Mode(enum.Enum):
@@ -91,6 +92,12 @@ class RosDynamixelController(Node):
         self.motor_timer = self.create_timer(1.0 / 20.0, self._motor_callback)
         self.rl_timer = self.create_timer(1.0 / 20.0, self._rl_callback)
 
+        # Weight Tracking
+        self._estimated_weight_kg = 0.0
+        self._desired_weight_kg = 0.0
+        self._kg_pid = PIDController(kp=15.0, ki=0.0, kd=0.5)
+        self._weight_filter = LowPassFilter(alpha=0.01)
+
     def _declare_parameters(self):
         """Declare and get all ROS parameters"""
         self.joystick_topic = self.declare_parameter("joystick_topic", "/joy").get_parameter_value().string_value
@@ -115,6 +122,9 @@ class RosDynamixelController(Node):
         )
         self.measured_position_error_topic = (
             self.declare_parameter("measured_position_error_topic", "/measured_position_error_rad").get_parameter_value().string_value
+        )
+        self.estimated_weight_kg_topic = (
+            self.declare_parameter("estimated_weight_kg", "/estimated_weight_kg").get_parameter_value().string_value
         )
 
     def _setup_communication(self):
@@ -142,7 +152,7 @@ class RosDynamixelController(Node):
         self._motor._writeData(id, ADDR_PROFILE_ACCELERATION, 4, 0)  # Set profile acceleration to 0 (infinite)
         self._motor._writeData(id, 88, 2, 0)  # Feedforward 1 gain to 0
         self._motor._writeData(id, 90, 2, 0)  # Feedforward 2 gain to 0
-        self._motor._writeData(id, 9, 1, 0) # set return delay to 9
+        self._motor._writeData(id, 9, 1, 0) # set return delay to 0
         # self._motor._writeData(id, 8, 1, 3) # set baud rate to 1M
 
         # mode_value = self._motor._readData(id, 10, 1)
@@ -158,6 +168,7 @@ class RosDynamixelController(Node):
     def _setup_publishers_subscribers(self):
         """Create all publishers and subscribers"""
         self.joystick_subscription = self.create_subscription(Joy, self.joystick_topic, self._joystick_callback, 10)
+        self.estimated_weight_kg_subscription = self.create_subscription(Float32, self.estimated_weight_kg_topic, self._estimated_weight_kg_callback, 10)
         self.desired_ee_angle_publisher = self.create_publisher(Float32, "/desired_ee_angle_rad", 10)
         self.desired_position_publisher = self.create_publisher(Float32, self.desired_position_topic, 10)
         self.desired_current_publisher = self.create_publisher(Float32, self.desired_current_topic, 10)
@@ -167,6 +178,8 @@ class RosDynamixelController(Node):
         self.measured_current_publisher = self.create_publisher(Float32, self.measured_current_topic, 10)
         self.measured_pwm_publisher = self.create_publisher(Float32, self.measured_pwm_topic, 10)
         self.measured_position_error_publisher = self.create_publisher(Float32, self.measured_position_error_topic, 10)
+        self.desired_weight_kg_publisher = self.create_publisher(Float32, "/desired_weight_kg", 10)
+        self.filtered_weight_kg_publisher = self.create_publisher(Float32, "/filtered_weight_kg", 10)
 
     def _joystick_callback(self, msg: Joy):
         """Store latest joystick message"""
@@ -207,6 +220,10 @@ class RosDynamixelController(Node):
         # Joystick moved
         elif msg.axes[0] > 0.01 or msg.axes[0] < -0.01:
             self._mode = Mode.MANUAL
+
+    def _estimated_weight_kg_callback(self, msg: Float32):
+        """Store latest estimated weight in kg"""
+        self._estimated_weight_kg = msg.data
 
     def _send_position(self, position: float):
         """Send position commands to Dynamixel motors"""
@@ -254,6 +271,18 @@ class RosDynamixelController(Node):
         measured_position_error_msg.data = position_error
         self.measured_position_error_publisher.publish(measured_position_error_msg)
 
+    def _publish_desired_weight_kg(self, weight_kg: float):
+        """Publish desired weight in kg"""
+        desired_weight_kg_msg = Float32()
+        desired_weight_kg_msg.data = weight_kg
+        self.desired_weight_kg_publisher.publish(desired_weight_kg_msg)
+
+    def _publish_filtered_weight_kg(self, weight_kg: float):
+        """Publish filtered weight in kg"""
+        filtered_weight_kg_msg = Float32()
+        filtered_weight_kg_msg.data = weight_kg
+        self.filtered_weight_kg_publisher.publish(filtered_weight_kg_msg)
+
     def _control_callback(self):
         """Timer callback for controlling the motor"""
         if self._latest_joy is None:
@@ -282,7 +311,14 @@ class RosDynamixelController(Node):
         elif self._mode == Mode.ZERO:
             self._desired_position_degrees = 0.0
         elif self._mode == Mode.MANUAL:
-            self._desired_position_degrees = msg.axes[0] * 360
+            # self._desired_position_degrees = msg.axes[0] * 360
+            self._desired_weight_kg = msg.axes[0] * 3.0
+            filtered_weight_kg = self._weight_filter.filter(self._estimated_weight_kg)
+            kg_error = self._desired_weight_kg - filtered_weight_kg
+            delta_position_from_weight = self._kg_pid.advance(kg_error, dt=1/80, velocity=self._measured_velocity_rad_per_sec)
+            self._desired_position_degrees = (delta_position_from_weight) * 180.0 / np.pi
+            # self._desired_position_degrees = (self._measured_position_rad + delta_position_from_weight) * 180.0 / np.pi
+            self._previous_kg_error = kg_error
         elif self._mode == Mode.RL:
             self._desired_ee_angle_rad = np.clip(msg.axes[3] * 0.5 * np.pi, 0.0, None)
             desired_position_rads = np.clip(self._measured_position_rad + self._desired_position_delta_rad, 0.0, 2 * np.pi)
@@ -290,6 +326,8 @@ class RosDynamixelController(Node):
         else:
             self._desired_position_degrees = self._measured_position_rad * 180.0 / np.pi
 
+        self._publish_filtered_weight_kg(filtered_weight_kg)
+        self._publish_desired_weight_kg(self._desired_weight_kg)
         self._publish_desired_ee_angle(self._desired_ee_angle_rad)
         self._publish_desired_position(self._desired_position_degrees / 180.0 * np.pi)
 
@@ -308,10 +346,11 @@ class RosDynamixelController(Node):
         if self._position_error > 0.0:
             self._p_gain = 0.1
         else:
-            self._p_gain = 0.4
+            self._p_gain = 0.1
 
         self._desired_pwm_percentage = 100.0 * self._p_gain * self._position_error
         self._desired_pwm_percentage = np.clip(self._desired_pwm_percentage, -self._max_pwm, self._max_pwm)
+        self._desired_pwm_percentage += 2.0
 
         self._publish_desired_pwm(self._desired_pwm_percentage)
         self._send_pwm(self._desired_pwm_percentage)
@@ -346,6 +385,7 @@ class RosDynamixelController(Node):
 
     def __del__(self):
         """Cleanup on destruction"""
+        self._motor.disableTorque()
         self._connector.closePort()
 
 

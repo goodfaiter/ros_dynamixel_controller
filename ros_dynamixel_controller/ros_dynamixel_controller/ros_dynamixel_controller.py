@@ -6,6 +6,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float32
 
 from .dynamixel_address_book import (
+    ADDR_PRESENT_PWM,
     ADDR_PROFILE_VELOCITY,
     ADDR_PROFILE_ACCELERATION,
     DYNA_TO_AMP,
@@ -15,7 +16,12 @@ from .dynamixel_address_book import (
 )
 
 from dynamixel_easy_sdk import Connector, OperatingMode
+from dynamixel_sdk.robotis_def import COMM_SUCCESS
 from .scanner import scan_dynamixel_motors
+
+# Bulk read Present PWM (124), Current (126), Velocity (128), Position (132) in one transaction.
+_BULK_READ_START_ADDR = ADDR_PRESENT_PWM
+_BULK_READ_LENGTH = 12  # 2 + 2 + 4 + 4 bytes
 
 
 class RosDynamixelController(Node):
@@ -132,28 +138,58 @@ class RosDynamixelController(Node):
         desired_pwm_msg.data = pwm_percentage
         self.desired_pwm_publisher.publish(desired_pwm_msg)
 
+    def _read_motor_state(self):
+        """Read PWM, Current, Velocity and Position in a single Dynamixel transaction."""
+        data, result, error = self._connector._packet_handler.readTxRx(
+            self._connector._port_handler,
+            self._motor.id,
+            _BULK_READ_START_ADDR,
+            _BULK_READ_LENGTH,
+        )
+        if result != COMM_SUCCESS or error != 0:
+            self.get_logger().warning(
+                f"Bulk motor-state read failed: comm_result={result}, dxl_error={error}"
+            )
+            return None
+        return data
+
+    @staticmethod
+    def _parse_motor_state(data):
+        """Parse the 12-byte bulk read response."""
+        data = bytes(data)
+        pwm_raw = int.from_bytes(data[0:2], byteorder="little", signed=True)
+        current_raw = int.from_bytes(data[2:4], byteorder="little", signed=True)
+        velocity_raw = int.from_bytes(data[4:8], byteorder="little", signed=True)
+        position_raw = int.from_bytes(data[8:12], byteorder="little", signed=True)
+        return pwm_raw, current_raw, velocity_raw, position_raw
+
     def _state_callback(self):
         """Timer callback for reading and publishing motor states"""
-        measured_position_raw = self._motor.getPresentPosition() - self._position_homing_offset
+        data = self._read_motor_state()
+        if data is None:
+            return
+
+        measured_pwm_raw, measured_current_raw, measured_velocity_raw, measured_position_raw = self._parse_motor_state(
+            data
+        )
+
+        measured_position_raw -= self._position_homing_offset
         self._measured_position_rad = measured_position_raw * DYNA_TO_DEGREE / 360.0 * 2 * math.pi
 
         measured_position_msg = Float32()
         measured_position_msg.data = self._measured_position_rad
         self.measured_position_publisher.publish(measured_position_msg)
 
-        measured_velocity_raw = self._motor.getPresentVelocity()
         self._measured_velocity_rad_per_sec = measured_velocity_raw * DYNA_TO_REV_PER_MIN / 60 * 2 * math.pi
         measured_velocity_msg = Float32()
         measured_velocity_msg.data = self._measured_velocity_rad_per_sec
         self.measured_velocity_publisher.publish(measured_velocity_msg)
 
-        measured_current_raw = self._motor.getPresentCurrent()
         measured_current = measured_current_raw * DYNA_TO_AMP
         measured_current_msg = Float32()
         measured_current_msg.data = measured_current
         self.measured_current_publisher.publish(measured_current_msg)
 
-        measured_pwm_raw = self._motor.getPresentPWM()
         measured_pwm = measured_pwm_raw * DYNA_TO_PWM
         measured_pwm_msg = Float32()
         measured_pwm_msg.data = measured_pwm

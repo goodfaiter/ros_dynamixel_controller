@@ -22,3 +22,14 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable set-usb-latency.service
 ```
+
+or
+
+sudo nano /etc/udev/rules.d/99-usb-latency.rules
+
+```
+SUBSYSTEM=="usb-serial", ACTION=="add", RUN+="/bin/sh -c 'echo 4 > /sys/bus/usb-serial/devices/%k/latency_timer'"
+```
+
+sudo udevadm control --reload-rules
+sudo udevadm trigger

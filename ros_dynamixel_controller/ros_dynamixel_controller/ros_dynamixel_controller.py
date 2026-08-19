@@ -4,6 +4,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32
+from std_srvs.srv import Trigger
 
 from .dynamixel_address_book import (
     ADDR_PRESENT_PWM,
@@ -36,6 +37,7 @@ class RosDynamixelController(Node):
         # Parameters
         self._declare_parameters()
         self._setup_communication()
+        self._reset_sensors()
         self._setup_publishers_subscribers()
 
         # Timers
@@ -65,6 +67,12 @@ class RosDynamixelController(Node):
         self.desired_pwm_topic = (
             self.declare_parameter("desired_pwm_topic", "/desired_pwm_percentage").get_parameter_value().string_value
         )
+        self.bota_reset_service_name = (
+            self.declare_parameter("bota_reset_service_name", "/bota_node/reset").get_parameter_value().string_value
+        )
+        self.hx711_reset_service_name = (
+            self.declare_parameter("hx711_reset_service_name", "/hx711_node/reset").get_parameter_value().string_value
+        )
 
     def _setup_communication(self):
         """Initialize communication with Dynamixel servos"""
@@ -87,6 +95,45 @@ class RosDynamixelController(Node):
         self._position_homing_offset = self._motor.getPresentPosition()
 
         self.get_logger().info("Communication with Dynamixel servos established.")
+
+    def _reset_sensors(self):
+        """Trigger reset on sensor nodes via ROS services.
+
+        This is non-blocking: if a service is not ready, it is skipped. The sensor
+        nodes will shut themselves down and be restarted by Docker Compose, which
+        re-runs their startup tare sequence.
+        """
+        self.get_logger().info("Triggering sensor reset services...")
+
+        service_names = {
+            "Bota": self.bota_reset_service_name,
+            "HX711": self.hx711_reset_service_name,
+        }
+
+        for sensor_name, service_name in service_names.items():
+            client = self.create_client(Trigger, service_name)
+            if not client.service_is_ready():
+                self.get_logger().warning(
+                    f"{sensor_name} reset service ({service_name}) is not ready; skipping."
+                )
+                continue
+
+            future = client.call_async(Trigger.Request())
+            future.add_done_callback(
+                lambda fut, name=sensor_name: self._reset_service_done_callback(fut, name)
+            )
+            self.get_logger().info(f"{sensor_name} reset triggered via {service_name}.")
+
+    def _reset_service_done_callback(self, future, sensor_name):
+        """Log the result of an async reset service call."""
+        try:
+            response = future.result()
+            if response.success:
+                self.get_logger().info(f"{sensor_name} reset acknowledged: {response.message}")
+            else:
+                self.get_logger().warning(f"{sensor_name} reset reported failure: {response.message}")
+        except Exception as e:
+            self.get_logger().warning(f"{sensor_name} reset call failed: {e}")
 
     def _setup_publishers_subscribers(self):
         """Create all publishers and subscribers"""

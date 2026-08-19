@@ -37,12 +37,12 @@ class RosDynamixelController(Node):
         # Parameters
         self._declare_parameters()
         self._setup_communication()
-        self._reset_sensors()
         self._setup_publishers_subscribers()
 
         # Timers
         self.state_timer = self.create_timer(1.0 / 80.0, self._state_callback)
         self.motor_timer = self.create_timer(1.0 / 20.0, self._motor_callback)
+        self.reset_timer = self.create_timer(self.reset_delay_sec, self._on_reset_delay_elapsed)
 
     def _declare_parameters(self):
         """Declare and get all ROS parameters"""
@@ -72,6 +72,9 @@ class RosDynamixelController(Node):
         )
         self.hx711_reset_service_name = (
             self.declare_parameter("hx711_reset_service_name", "/hx711_node/reset").get_parameter_value().string_value
+        )
+        self.reset_delay_sec = (
+            self.declare_parameter("reset_delay_sec", 2.0).get_parameter_value().double_value
         )
 
     def _setup_communication(self):
@@ -134,6 +137,14 @@ class RosDynamixelController(Node):
                 self.get_logger().warning(f"{sensor_name} reset reported failure: {response.message}")
         except Exception as e:
             self.get_logger().warning(f"{sensor_name} reset call failed: {e}")
+
+    def _on_reset_delay_elapsed(self):
+        """One-shot timer callback: trigger sensor resets after the initial delay."""
+        self.reset_timer.cancel()
+        self.get_logger().info(
+            f"Reset delay of {self.reset_delay_sec} s elapsed; triggering sensor resets."
+        )
+        self._reset_sensors()
 
     def _setup_publishers_subscribers(self):
         """Create all publishers and subscribers"""

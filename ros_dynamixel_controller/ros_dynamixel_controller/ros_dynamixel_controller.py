@@ -64,18 +64,14 @@ class RosDynamixelController(Node):
         self.measured_position_error_topic = (
             self.declare_parameter("measured_position_error_topic", "/measured_position_error_rad").get_parameter_value().string_value
         )
-        self.desired_pwm_topic = (
-            self.declare_parameter("desired_pwm_topic", "/desired_pwm_percentage").get_parameter_value().string_value
-        )
+        self.desired_pwm_topic = self.declare_parameter("desired_pwm_topic", "/desired_pwm_percentage").get_parameter_value().string_value
         self.bota_reset_service_name = (
             self.declare_parameter("bota_reset_service_name", "/bota_node/reset").get_parameter_value().string_value
         )
         self.hx711_reset_service_name = (
             self.declare_parameter("hx711_reset_service_name", "/hx711_node/reset").get_parameter_value().string_value
         )
-        self.reset_delay_sec = (
-            self.declare_parameter("reset_delay_sec", 2.0).get_parameter_value().double_value
-        )
+        self.reset_delay_sec = self.declare_parameter("reset_delay_sec", 2.0).get_parameter_value().double_value
 
     def _setup_communication(self):
         """Initialize communication with Dynamixel servos"""
@@ -116,15 +112,11 @@ class RosDynamixelController(Node):
         for sensor_name, service_name in service_names.items():
             client = self.create_client(Trigger, service_name)
             if not client.service_is_ready():
-                self.get_logger().warning(
-                    f"{sensor_name} reset service ({service_name}) is not ready; skipping."
-                )
+                self.get_logger().warning(f"{sensor_name} reset service ({service_name}) is not ready; skipping.")
                 continue
 
             future = client.call_async(Trigger.Request())
-            future.add_done_callback(
-                lambda fut, name=sensor_name: self._reset_service_done_callback(fut, name)
-            )
+            future.add_done_callback(lambda fut, name=sensor_name: self._reset_service_done_callback(fut, name))
             self.get_logger().info(f"{sensor_name} reset triggered via {service_name}.")
 
     def _reset_service_done_callback(self, future, sensor_name):
@@ -141,9 +133,7 @@ class RosDynamixelController(Node):
     def _on_reset_delay_elapsed(self):
         """One-shot timer callback: trigger sensor resets after the initial delay."""
         self.reset_timer.cancel()
-        self.get_logger().info(
-            f"Reset delay of {self.reset_delay_sec} s elapsed; triggering sensor resets."
-        )
+        self.get_logger().info(f"Reset delay of {self.reset_delay_sec} s elapsed; triggering sensor resets.")
         self._reset_sensors()
 
     def _setup_publishers_subscribers(self):
@@ -156,9 +146,7 @@ class RosDynamixelController(Node):
         self.measured_velocity_publisher = self.create_publisher(Float32, self.measured_velocity_topic, 10)
         self.measured_current_publisher = self.create_publisher(Float32, self.measured_current_topic, 10)
         self.measured_pwm_publisher = self.create_publisher(Float32, self.measured_pwm_topic, 10)
-        self.measured_position_error_publisher = self.create_publisher(
-            Float32, self.measured_position_error_topic, 10
-        )
+        self.measured_position_error_publisher = self.create_publisher(Float32, self.measured_position_error_topic, 10)
         self.desired_pwm_publisher = self.create_publisher(Float32, self.desired_pwm_topic, 10)
 
     def _desired_position_callback(self, msg: Float32):
@@ -205,9 +193,7 @@ class RosDynamixelController(Node):
             _BULK_READ_LENGTH,
         )
         if result != COMM_SUCCESS or error != 0:
-            self.get_logger().warning(
-                f"Bulk motor-state read failed: comm_result={result}, dxl_error={error}"
-            )
+            self.get_logger().warning(f"Bulk motor-state read failed: comm_result={result}, dxl_error={error}")
             return None
         return data
 
@@ -227,9 +213,7 @@ class RosDynamixelController(Node):
         if data is None:
             return
 
-        measured_pwm_raw, measured_current_raw, measured_velocity_raw, measured_position_raw = self._parse_motor_state(
-            data
-        )
+        measured_pwm_raw, measured_current_raw, measured_velocity_raw, measured_position_raw = self._parse_motor_state(data)
 
         measured_position_raw -= self._position_homing_offset
         self._measured_position_rad = measured_position_raw * DYNA_TO_DEGREE / 360.0 * 2 * math.pi

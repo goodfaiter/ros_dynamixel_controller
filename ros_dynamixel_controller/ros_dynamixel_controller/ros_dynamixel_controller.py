@@ -40,8 +40,8 @@ class RosDynamixelController(Node):
         self._setup_publishers_subscribers()
 
         # Timers
-        self.state_timer = self.create_timer(1.0 / 80.0, self._state_callback)
-        self.motor_timer = self.create_timer(1.0 / 20.0, self._motor_callback)
+        self.state_timer = self.create_timer(1.0 / 200.0, self._state_callback)
+        self.motor_timer = self.create_timer(1.0 / 200.0, self._motor_callback)
         self.reset_timer = self.create_timer(self.reset_delay_sec, self._on_reset_delay_elapsed)
 
     def _declare_parameters(self):
